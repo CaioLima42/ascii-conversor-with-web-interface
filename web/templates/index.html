@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Visualizador ASCII de Vídeo</title>
+  <style>
+    body {
+      background-color: #111;
+      color: #0f0;
+      font-family: monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+
+    #asciiOutput {
+      background-color: #000;
+      color: #0f0;
+      font-family: monospace;
+      font-size: 8px;
+      line-height: 8px;
+      white-space: pre;
+      display: flex;
+      padding: 10px;
+      border: 1px solid #0f0;
+      margin-top: 20px;
+    }
+
+    input,
+    button {
+      margin: 10px;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="information">
+    <h1>Upload de Vídeo ASCII</h1>
+    <div>
+      <input type="file" id="videoInput" accept="video/mp4" />
+      <button onclick="sendVideo()" id="button">Enviar</button>
+    </div>
+  </div>
+
+  <h2>Saída ASCII:</h2>
+  <pre id="asciiOutput" style="display: none;"></pre>
+
+   <audio id="audioPlayer" autoplay></audio>
+
+  <script>
+    function sendVideo() {
+      const info = document.getElementById("information");
+      const fileInput = document.getElementById('videoInput');
+      const file = fileInput.files[0];
+      const asciiOutput = document.getElementById('asciiOutput');
+      const audioPlayer = document.getElementById('audioPlayer');
+
+      if (!file) {
+        alert("Selecione um vídeo.");
+        return;
+      }
+
+      info.style.display = 'none';
+      asciiOutput.style.display = 'block';
+      asciiOutput.style.height = '725px';
+      asciiOutput.style.width = '785px';
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result.split(',')[1];
+
+        // Primeiro: carregar o áudio
+        fetch('http://localhost:8080/audio', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ video: base64String })
+        })
+        .then(res => res.blob())
+        .then(blob => {
+          const url = URL.createObjectURL(blob);
+          audioPlayer.src = url;
+
+          audioPlayer.oncanplaythrough = () => {
+            audioPlayer.play();
+            fetch('http://localhost:8080/process', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ video: base64String })
+            })
+            .then(response => {
+              const decoder = new TextDecoder("utf-8");
+              const reader = response.body.getReader();
+
+              function read() {
+                reader.read().then(({ done, value }) => {
+                  if (done) {
+                    info.style.display = 'block';
+                    return;
+                  }
+
+                  const currentFrame = decoder.decode(value);
+                  asciiOutput.textContent = currentFrame;
+                  read();
+                });
+              }
+
+              read();
+            })
+            .catch(err => {
+              asciiOutput.textContent = "Erro ao processar o vídeo: " + err.message;
+            });
+          };
+        })
+        .catch(err => {
+          asciiOutput.textContent = "Erro ao carregar o áudio: " + err.message;
+        });
+      };
+
+      reader.readAsDataURL(file);
+    }
+  </script>
+</body>
+
+</html>
